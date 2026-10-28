@@ -598,20 +598,23 @@ class LinearDiscriminantAnalysis(
         # indexed by position in `self.classes_`.
         for idx in range(n_classes):
             Xg = X[y_encoded == idx]
-            Xc.append(Xg - self.means_[idx, :])
+            # Weight the centered samples of each class so that `Xc.T @ Xc` is
+            # the prior-weighted within-class covariance `sum_k prior_k * C_k`
+            # used by the other solvers (see `covariance_`).
+            class_weight = xp.sqrt(self.priors_[idx] / Xg.shape[0])
+            Xc.append(class_weight * (Xg - self.means_[idx, :]))
 
         self.xbar_ = self.priors_ @ self.means_
 
         Xc = xp.concat(Xc, axis=0)
 
         # 1) within (univariate) scaling by with classes std-dev
-        std = xp.std(Xc, axis=0)
+        std = xp.sqrt(xp.sum(Xc**2, axis=0))
         # avoid division by zero in normalization
         std[std == 0] = 1.0
-        fac = xp.asarray(1.0 / n_samples, dtype=X.dtype, device=array_device(X))
 
         # 2) Within variance scaling
-        X = xp.sqrt(fac) * (Xc / std)
+        X = Xc / std
         # SVD of centered (within)scaled data
         _, S, Vt = svd(X, full_matrices=False)
 

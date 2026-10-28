@@ -314,6 +314,37 @@ def test_lda_solver_agreement():
     assert_allclose(decision_svd, decision_lsqr)
 
 
+@pytest.mark.parametrize("priors", [None, [0.5, 0.5], [0.9, 0.1]])
+def test_lda_solver_agreement_with_priors(priors):
+    """Check that all solvers use the prior-weighted within-class covariance.
+
+    With imbalanced classes of different spread, weighting the class covariances
+    by the priors or by the class proportions gives different models, so the
+    solvers only agree if they all use `covariance_ = sum_k prior_k * C_k`.
+    """
+    rng = np.random.RandomState(0)
+    X = np.vstack(
+        [rng.randn(200, 2) * [1.0, 0.3], rng.randn(20, 2) * [0.3, 2.0] + [1.5, 0.5]]
+    )
+    y = np.repeat([0, 1], [200, 20])
+    X_test = rng.uniform(-3, 3, size=(100, 2))
+
+    lda = {
+        solver: LinearDiscriminantAnalysis(
+            solver=solver, priors=priors, store_covariance=True
+        ).fit(X, y)
+        for solver in ("svd", "lsqr", "eigen")
+    }
+    for solver in ("lsqr", "eigen"):
+        assert_allclose(lda["svd"].covariance_, lda[solver].covariance_)
+        assert_allclose(
+            lda["svd"].decision_function(X_test), lda[solver].decision_function(X_test)
+        )
+        assert_allclose(
+            lda["svd"].predict_proba(X_test), lda[solver].predict_proba(X_test)
+        )
+
+
 def test_lda_explained_variance_ratio():
     # Test if the sum of the normalized eigen vectors values equals 1,
     # Also tests whether the explained_variance_ratio_ formed by the
