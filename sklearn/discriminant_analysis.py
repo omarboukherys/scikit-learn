@@ -129,12 +129,12 @@ def _class_means(X, y_encoded, *, n_classes):
     return means
 
 
-def _class_cov(
-    X, y_encoded, priors, shrinkage=None, covariance_estimator=None, *, n_classes
-):
+def _class_cov(X, y_encoded, shrinkage=None, covariance_estimator=None, *, n_classes):
     """Compute weighted within-class covariance matrix.
 
-    The per-class covariance are weighted by the class priors.
+    The per-class covariances are weighted by the proportion of training samples
+    in each class. Without shrinkage, this is the maximum likelihood estimate of
+    the covariance shared by all classes. It does not depend on the class priors.
 
     Parameters
     ----------
@@ -146,9 +146,6 @@ def _class_cov(
 
     n_classes : int
         Number of classes, i.e. `1 + max(y_encoded)`.
-
-    priors : array-like of shape (n_classes,)
-        Class priors.
 
     shrinkage : 'auto' or float, default=None
         Shrinkage parameter, possible values:
@@ -172,9 +169,13 @@ def _class_cov(
         Weighted within-class covariance matrix
     """
     cov = np.zeros(shape=(X.shape[1], X.shape[1]))
+    n_samples = X.shape[0]
     for idx in range(n_classes):
         Xg = X[y_encoded == idx, :]
-        cov += priors[idx] * np.atleast_2d(_cov(Xg, shrinkage, covariance_estimator))
+        class_proportion = Xg.shape[0] / n_samples
+        cov += class_proportion * np.atleast_2d(
+            _cov(Xg, shrinkage, covariance_estimator)
+        )
     return cov
 
 
@@ -355,9 +356,10 @@ class LinearDiscriminantAnalysis(
 
     covariance_ : array-like of shape (n_features, n_features)
         Weighted within-class covariance matrix. It corresponds to
-        `sum_k prior_k * C_k` where `C_k` is the covariance matrix of the
-        samples in class `k`. The `C_k` are estimated using the (potentially
-        shrunk) biased estimator of covariance. If solver is 'svd', only
+        `sum_k (n_k / n_samples) * C_k` where `n_k` is the number of samples
+        in class `k` and `C_k` is the covariance matrix of those samples. The
+        `C_k` are estimated using the (potentially shrunk) biased estimator of
+        covariance. It does not depend on `priors`. If solver is 'svd', only
         exists when `store_covariance` is True.
 
     explained_variance_ratio_ : ndarray of shape (n_components,)
@@ -486,7 +488,6 @@ class LinearDiscriminantAnalysis(
         self.covariance_ = _class_cov(
             X,
             y_encoded,
-            self.priors_,
             shrinkage,
             covariance_estimator,
             n_classes=n_classes,
@@ -544,7 +545,6 @@ class LinearDiscriminantAnalysis(
         self.covariance_ = _class_cov(
             X,
             y_encoded,
-            self.priors_,
             shrinkage,
             covariance_estimator,
             n_classes=n_classes,
@@ -589,9 +589,7 @@ class LinearDiscriminantAnalysis(
 
         self.means_ = _class_means(X, y_encoded, n_classes=n_classes)
         if self.store_covariance:
-            self.covariance_ = _class_cov(
-                X, y_encoded, self.priors_, n_classes=n_classes
-            )
+            self.covariance_ = _class_cov(X, y_encoded, n_classes=n_classes)
 
         Xc = []
         # `y_encoded` holds integer class codes (see `fit`), so groups are
